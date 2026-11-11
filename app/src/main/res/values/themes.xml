@@ -1,7 +1,0 @@
-<resources>
-    <style name="Theme.Funky" parent="android:Theme.Material.Light.NoActionBar">
-        <item name="android:windowBackground">@color/face</item>
-        <item name="android:statusBarColor">@color/title_dark</item>
-        <item name="android:navigationBarColor">@color/face</item>
-    </style>
-</resources>
