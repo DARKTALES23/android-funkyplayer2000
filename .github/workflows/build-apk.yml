@@ -2,7 +2,7 @@ name: Build APK
 
 on:
   push:
-    branches: [main]
+    branches: [main, master]
   workflow_dispatch:
 
 jobs:
@@ -10,6 +10,19 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      # Finds the folder that contains settings.gradle.kts, even if the project is inside a subfolder.
+      - name: Find the project folder
+        id: find
+        run: |
+          f=$(find . -maxdepth 3 -name settings.gradle.kts -not -path "./.git/*" | head -n 1)
+          if [ -z "$f" ]; then
+            echo "::error::settings.gradle.kts was not found in this repository. Files found:"
+            find . -maxdepth 3 -not -path "./.git/*" | head -60
+            exit 1
+          fi
+          echo "Project folder: $(dirname "$f")"
+          echo "dir=$(dirname "$f")" >> "$GITHUB_OUTPUT"
 
       - uses: actions/setup-java@v4
         with:
@@ -24,9 +37,10 @@ jobs:
           gradle-version: "8.9"
 
       - name: Build the debug APK
+        working-directory: ${{ steps.find.outputs.dir }}
         run: gradle assembleDebug --no-daemon
 
       - uses: actions/upload-artifact@v4
         with:
           name: FunkyPlayer2000-debug-apk
-          path: app/build/outputs/apk/debug/app-debug.apk
+          path: ${{ steps.find.outputs.dir }}/app/build/outputs/apk/debug/app-debug.apk
