@@ -124,10 +124,13 @@ fun PlayerScreen(vm: PlayerViewModel = viewModel()) {
         Row(Modifier.padding(start = 8.dp)) {
             XpTab("Queue (${ui.queue.size})", tab == 0, { tab = 0 })
             XpTab("Library", tab == 1, { tab = 1 })
+            XpTab("YouTube", tab == 2, { tab = 2 })
         }
         Box(Modifier.weight(1f).fillMaxWidth().padding(horizontal = 8.dp).field()) {
             if (tab == 0) {
                 QueuePane(ui, vm, onAddFiles = { picker.launch(arrayOf("audio/*")) })
+            } else if (tab == 2) {
+                YtPane(vm)
             } else {
                 LibraryPane(
                     library = library, granted = granted, scanning = scanning, vm = vm,
@@ -153,7 +156,7 @@ fun PlayerScreen(vm: PlayerViewModel = viewModel()) {
 private fun NowPlaying(ui: UiState) {
     val t = ui.queue.getOrNull(ui.index)
     Row(Modifier.fillMaxWidth().padding(8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        Box(Modifier.size(124.dp).field()) { Cover(t?.uri) }
+        Box(Modifier.size(124.dp).field()) { Cover(t) }
         Column(Modifier.weight(1f).height(124.dp).field().padding(8.dp)) {
             Text(
                 t?.title ?: "Nothing playing",
@@ -175,11 +178,11 @@ private fun NowPlaying(ui: UiState) {
 }
 
 @Composable
-private fun Cover(uri: String?) {
+private fun Cover(t: Track?) {
     val ctx = LocalContext.current
-    val bmp by produceState<ImageBitmap?>(null, uri) {
+    val bmp by produceState<ImageBitmap?>(null, t?.uri) {
         value = null
-        if (uri != null) value = CoverLoader.load(ctx, uri)?.asImageBitmap()
+        if (t != null) value = CoverLoader.load(ctx, t)?.asImageBitmap()
     }
     val b = bmp
     if (b != null) {

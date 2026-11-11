@@ -11,9 +11,11 @@ import androidx.lifecycle.viewModelScope
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
+import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -23,6 +25,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.schabi.newpipe.extractor.Page
+import org.schabi.newpipe.extractor.search.SearchQueryHandler
 
 data class UiState(
     val queue: List<Track> = emptyList(),
@@ -47,6 +51,16 @@ data class UiState(
         }
 }
 
+data class YtState(
+    val query: String = "",
+    val kind: YtMusic.Kind = YtMusic.Kind.Songs,
+    val results: List<YtMusic.Result> = emptyList(),
+    val loading: Boolean = false,
+    val error: String? = null,
+    val hasMore: Boolean = false,
+    val searched: Boolean = false,
+)
+
 class PlayerViewModel(app: Application) : AndroidViewModel(app) {
     private val _ui = MutableStateFlow(UiState())
     val ui: StateFlow<UiState> = _ui.asStateFlow()
@@ -58,6 +72,10 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
     private val listener = object : Player.Listener {
         override fun onEvents(player: Player, events: Player.Events) {
             refresh(rebuild = events.contains(Player.EVENT_TIMELINE_CHANGED))
+        }
+
+        override fun onPlayerError(error: PlaybackException) {
+            note("Playback error: " + (error.cause?.message ?: error.errorCodeName))
         }
     }
 
@@ -92,6 +110,7 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
             durationMs = extras?.getLong("dur") ?: 0L,
             number = extras?.getInt("num") ?: 0,
             year = extras?.getInt("year") ?: 0,
+            coverUrl = extras?.getString("cover"),
         )
     }
 
@@ -100,6 +119,7 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
             putLong("dur", t.durationMs)
             putInt("num", t.number)
             putInt("year", t.year)
+            t.coverUrl?.let { putString("cover", it) }
         }
         return MediaItem.Builder()
             .setMediaId(t.uri)
@@ -110,6 +130,7 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
                     .setArtist(t.artist)
                     .setAlbumTitle(t.album)
                     .setAlbumArtist(t.albumArtist)
+                    .setArtworkUri(t.coverUrl?.let { Uri.parse(it) })
                     .setExtras(extras)
                     .build()
             )
@@ -278,6 +299,101 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
             else -> Player.REPEAT_MODE_OFF
         }
         refresh()
+    }
+
+    // ---- YouTube Music
+    private val _yt = MutableStateFlow(YtState())
+    val yt: StateFlow<YtState> = _yt.asStateFlow()
+    private var ytNext: Page? = null
+    private var ytHandler: SearchQueryHandler? = null
+    private var ytJob: Job? = null
+
+    private fun friendly(e: Exception): String {
+        val m = e.message?.take(140)
+        return when {
+            e.javaClass.simpleName.contains("ReCaptcha") -> "YouTube is asking for a captcha. Try again in a few minutes."
+            m.isNullOrBlank() -> e.javaClass.simpleName
+            else -> m
+        }
+    }
+
+    fun ytSearch(query: String, kind: YtMusic.Kind) {
+        val q = query.trim()
+        if (q.isEmpty()) return
+        ytJob?.cancel()
+        ytNext = null
+        ytHandler = null
+        _yt.update {
+            it.copy(query = q, kind = kind, results = emptyList(), loading = true, error = null, hasMore = false, searched = true)
+        }
+        ytJob = viewModelScope.launch {
+            try {
+                if (YtMusic.looksLikeLink(q)) {
+                    val r = YtMusic.fromLink(q)
+                    _yt.update { it.copy(results = r, loading = false) }
+                } else {
+                    val page = YtMusic.search(q, kind)
+                    ytNext = page.next
+                    ytHandler = page.handler
+                    _yt.update { it.copy(results = page.results, loading = false, hasMore = page.next != null) }
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _yt.update { it.copy(loading = false, error = friendly(e)) }
+            }
+        }
+    }
+
+    fun ytMore() {
+        val handler = ytHandler ?: return
+        val next = ytNext ?: return
+        val kind = _yt.value.kind
+        ytNext = null
+        _yt.update { it.copy(loading = true, hasMore = false) }
+        ytJob = viewModelScope.launch {
+            try {
+                val page = YtMusic.more(handler, next, kind)
+                ytNext = page.next
+                _yt.update { it.copy(results = it.results + page.results, loading = false, hasMore = page.next != null) }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _yt.update { it.copy(loading = false, error = friendly(e)) }
+            }
+        }
+    }
+
+    private fun withPlaylist(p: YtMusic.Result.Playlist, action: (List<Track>) -> Unit) {
+        note("Loading “${p.title}”…")
+        viewModelScope.launch {
+            try {
+                val tracks = YtMusic.loadPlaylist(p.url, p.isAlbum)
+                if (tracks.isEmpty()) note("Nothing found in “${p.title}”") else action(tracks)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                note(friendly(e))
+            }
+        }
+    }
+
+    /** Plays a song (the songs listed after it follow) or a whole album/playlist. */
+    fun ytPlay(r: YtMusic.Result) {
+        when (r) {
+            is YtMusic.Result.Song -> {
+                val songs = _yt.value.results.filterIsInstance<YtMusic.Result.Song>().map { it.track }
+                playTracks(songs, songs.indexOf(r.track).coerceAtLeast(0))
+            }
+            is YtMusic.Result.Playlist -> withPlaylist(r) { playTracks(it, 0) }
+        }
+    }
+
+    fun ytAdd(r: YtMusic.Result) {
+        when (r) {
+            is YtMusic.Result.Song -> addToQueue(listOf(r.track))
+            is YtMusic.Result.Playlist -> withPlaylist(r) { addToQueue(it) }
+        }
     }
 
     override fun onCleared() {

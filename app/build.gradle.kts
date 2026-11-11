@@ -12,8 +12,8 @@ android {
         applicationId = "com.funkyplayer2000"
         minSdk = 30            // Android 11
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = 2
+        versionName = "0.2.0"
     }
 
     buildTypes {
@@ -24,12 +24,21 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
+        isCoreLibraryDesugaringEnabled = true      // NewPipeExtractor needs it below Android 13
     }
     kotlinOptions {
         jvmTarget = "17"
     }
     buildFeatures {
         compose = true
+    }
+    packaging {
+        resources {
+            excludes += setOf(
+                "META-INF/INDEX.LIST", "META-INF/DEPENDENCIES", "META-INF/LICENSE*", "META-INF/NOTICE*",
+                "/META-INF/{AL2.0,LGPL2.1}", "META-INF/versions/9/OSGI-INF/MANIFEST.MF",
+            )
+        }
     }
 }
 
@@ -47,4 +56,9 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.7")
     implementation("androidx.core:core-ktx:1.15.0")
+
+    // Stage 2: YouTube Music (GPLv3)
+    implementation("com.github.TeamNewPipe:NewPipeExtractor:v0.26.5")
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs_nio:2.1.4")
 }

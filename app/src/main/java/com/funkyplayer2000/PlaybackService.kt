@@ -3,18 +3,24 @@ package com.funkyplayer2000
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
 import androidx.annotation.OptIn
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.audio.AudioProcessor
 import androidx.media3.common.audio.BaseAudioProcessor
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.datasource.DefaultDataSource
+import androidx.media3.datasource.DefaultHttpDataSource
+import androidx.media3.datasource.ResolvingDataSource
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.audio.AudioSink
 import androidx.media3.exoplayer.audio.DefaultAudioSink
+import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
+import java.io.IOException
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
@@ -60,7 +66,33 @@ class PlaybackService : MediaSessionService() {
                 .setAudioProcessors(arrayOf<AudioProcessor>(TapProcessor()))
                 .build()
         }
+        // Files and content:// URIs play normally; "ytm://VIDEOID" is resolved to a real YouTube audio URL
+        // at the moment ExoPlayer opens it (so it never uses an expired link).
+        val http = DefaultHttpDataSource.Factory()
+            .setAllowCrossProtocolRedirects(true)
+            .setConnectTimeoutMs(15_000)
+            .setReadTimeoutMs(20_000)
+        val resolving = ResolvingDataSource.Factory(DefaultDataSource.Factory(this, http)) { dataSpec ->
+            val uri = dataSpec.uri
+            if (uri.scheme == "ytm") {
+                val id = uri.schemeSpecificPart.removePrefix("//")
+                try {
+                    val r = YtStreams.resolve(id)
+                    dataSpec.buildUpon()
+                        .setUri(Uri.parse(r.url))
+                        .setHttpRequestHeaders(dataSpec.httpRequestHeaders + ("User-Agent" to r.userAgent))
+                        .build()
+                } catch (e: IOException) {
+                    throw e
+                } catch (e: Exception) {
+                    throw IOException(e.message ?: "Could not open the YouTube stream", e)
+                }
+            } else {
+                dataSpec
+            }
+        }
         val player = ExoPlayer.Builder(this, renderers)
+            .setMediaSourceFactory(DefaultMediaSourceFactory(this).setDataSourceFactory(resolving))
             .setAudioAttributes(
                 AudioAttributes.Builder()
                     .setUsage(C.USAGE_MEDIA)

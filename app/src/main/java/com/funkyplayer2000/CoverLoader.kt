@@ -10,10 +10,34 @@ import android.util.LruCache
 import android.util.Size
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import java.net.HttpURLConnection
+import java.net.URL
 
 /** Cover art: the system thumbnail for MediaStore files, the embedded picture for any other file. */
 object CoverLoader {
     private val cache = LruCache<String, Bitmap>(24)
+
+    /** Cover of a track: downloaded from its URL (YouTube Music) or read from the device. */
+    suspend fun load(ctx: Context, track: Track): Bitmap? =
+        if (track.coverUrl != null) loadUrl(track.coverUrl) else load(ctx, track.uri)
+
+    private suspend fun loadUrl(url: String): Bitmap? = withContext(Dispatchers.IO) {
+        cache.get(url)?.let { return@withContext it }
+        var bmp: Bitmap? = null
+        try {
+            val c = URL(url).openConnection() as HttpURLConnection
+            c.connectTimeout = 10_000
+            c.readTimeout = 10_000
+            try {
+                bmp = c.inputStream.use { BitmapFactory.decodeStream(it) }
+            } finally {
+                c.disconnect()
+            }
+        } catch (_: Exception) {
+        }
+        if (bmp != null) cache.put(url, bmp)
+        bmp
+    }
 
     suspend fun load(ctx: Context, uriString: String): Bitmap? = withContext(Dispatchers.IO) {
         cache.get(uriString)?.let { return@withContext it }

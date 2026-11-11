@@ -9,7 +9,10 @@ data class Track(
     val durationMs: Long,
     val number: Int = 0,
     val year: Int = 0,
-)
+    val coverUrl: String? = null,     // YouTube Music tracks have a cover URL instead of a file
+) {
+    val isYoutube: Boolean get() = uri.startsWith("ytm://")
+}
 
 fun fmtTime(ms: Long): String {
     val s = (ms / 1000).coerceAtLeast(0)
