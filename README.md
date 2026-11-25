@@ -30,7 +30,7 @@
 
 ## Install on your phone
 
-1. Copy `app-debug.apk` to the phone and open it.
+1. Copy `funkyplayer2000.apk` to the phone and open it.
 2. Android asks you to allow installing apps from this source (your browser or file manager). Allow it for this install.
 3. Open **FunkyPlayer2000** and grant the permissions:
    - access to music and audio (needed to list the songs on the phone);
