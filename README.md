@@ -27,29 +27,6 @@
 ## Requirements
 
 - **Android 11 (API 30) or newer.**
-- To build: Android Studio (Ladybug or newer) **or** just a GitHub account (the included workflow builds the APK in the cloud).
-
-## Get the APK
-
-### Option A: let GitHub build it (no installs needed)
-
-1. Create a repository and upload this whole folder.
-2. Open the **Actions** tab and run **Build APK** (it also runs on every push to `main`).
-3. When it finishes, open the run and download the **FunkyPlayer2000-debug-apk** artifact (a zip with `app-debug.apk` inside).
-
-### Option B: Android Studio
-
-1. **File → Open** and choose this folder. Wait for the Gradle sync (it downloads Gradle 8.9 by itself).
-2. Plug in your phone (USB debugging on) or start an emulator, and press **Run ▶**.
-3. For an APK file: **Build → Build Bundle(s) / APK(s) → Build APK(s)**. It ends up in `app/build/outputs/apk/debug/`.
-
-If Android Studio complains about the Gradle wrapper, open **Settings → Build, Execution, Deployment → Gradle** and select Gradle 8.9, or run `gradle wrapper --gradle-version 8.9` once in this folder.
-
-### Option C: command line
-
-```bash
-gradle assembleDebug        # needs JDK 17, the Android SDK (platform 35) and Gradle 8.9
-```
 
 ## Install on your phone
 
